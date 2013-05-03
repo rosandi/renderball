@@ -1,0 +1,744 @@
+#!/bin/bash
+##############################################
+#
+#  RenderBall!!
+#
+#  Yudi Rosandi, 2004
+#
+# This program accepts gziped data
+##############################################
+#          Initialization & Settings         #
+##############################################
+
+LANG=
+INF=100000
+DATAFILE=
+
+#ParameterStarts #########
+
+RENCTR=$HOME/ctrl
+KEEPRENDERFILE=no
+SHOWTITLE=yes
+SHOWKEY=yes
+SHOWTIME=yes
+
+TITLEPOS=(20 30)
+TITLE="Renderball (Object-MD)"
+TITLECOLOR=White
+TITLEFONT="Helvetica-Bold"
+TITLEFONTSIZE=24
+
+TIMEPOS=(20 580)
+TIME=
+TIMEUNIT=ps
+TIMECOLOR=Red
+TIMEFONT="Helvetica-Bold"
+TIMEFONTSIZE=18
+TIMEFORMAT="%0.1f"
+
+KEYPOS=(510 480)
+KEYSPACE=30
+KEYSIZE=(30 100)
+KEYLABELPOS=(490 450)
+KEYLABEL="Temperature (K)"
+KEYLABELCOLOR=White
+KEYLABELFONT="Helvetica-Narrow"
+KEYLABELFONTSIZE=14
+
+SCALERANGE=(0 2000)
+SCALEHILABEL=
+SCALELOLABEL=
+BALLSIZE=1.5
+ROTATION=(0 0 0)
+TRANSLATION=(0 0 0)
+BACKGROUND=Black
+GLAS=0
+
+#Tagging the atom
+TAG=0
+TAGSIZE=1.5
+TAGCLR=Red
+
+SLABX=(-$INF $INF)
+SLABY=(-$INF $INF)
+SLABZ=(-$INF $INF)
+
+GLASSLAB=no
+
+WIDTH=600
+HEIGHT=600
+ANTIALIAS=yes
+INCFILE=
+INCLINE=
+VIEW=no
+DISTANCE=1
+CAMANGLE=35
+VERBOSE=no
+QUIET=yes
+KEEPLOG=no
+EYE=(30 -100 120)
+LOOKAT=(30 30 0)
+SKY=(0 1 0)
+
+DEFAULTLIGHTCOLOR=White
+LIGHT0_COLOR=White
+NLIGHT=0
+
+POSTCMD=""
+IMAGETYPE=png
+IGNOREINLINE=
+USEBLOB=
+BLOBSTRENGTH=
+BALLMODE=sphere
+
+#ParameterStop ############
+
+ONLYCREATEPOSTCMD=
+ONLYSHOWPARAM=
+
+TRASHCAN=""
+
+######## Tell me how to die! ####################
+
+die() {
+	echo $@ >& 2
+	exit -1
+}
+
+[[ -z $(which gawk) ]] && die "gawk needed"
+[[ -z $(which povray) ]] && die "povray needed"
+[[ -z $(which convert) ]] && die "convert (imagemagick) needed"
+
+######## parameter parsing ######################
+
+while [ ! -z "$1" ]; do
+	case "$1" in
+
+#HelpStart
+
+	"-c")
+	# read configuration file
+		if [[ -f $2 ]]; then
+			. $2
+		elif [[ -f $RENCTR/$2 ]]; then 
+			. $RENCTR/$2
+			[ "$QUIET" = "yes" ] || echo "Using configuration file: $RENCTR/$2" >& 2
+		else 
+			die "Can not find render control file $2"
+		fi
+			
+		shift 2
+		;;
+	"-create-postcmd")
+	# create only postprocessing cmd file
+		ONLYCREATEPOSTCMD="yes"
+		shift
+		;;
+	"-postcmd")
+	# use this postprocessing file
+		POSTCMD=$2
+		shift 2
+		;;
+	"-showparam")
+	# show parameter list
+		gawk '/^#ParameterStart/{show=1;next}
+		     /^#ParameterStop/{exit}show{print}' $0
+		exit
+		;;
+	"-help")
+	# show command line parameters
+		gawk '/^#HelpStart/{n=1;next}
+		     /^#HelpStop/{exit}
+		     {sub(/^[[:space:]]*/,"")}
+		     !n{next}
+		     /\"\-[[:print:]]*/{gsub(/\"/,"");sub(/\)/,"");printf($0":")}
+		     /^#/{gsub(/#/,"");print $0}
+		     ' $0
+		exit
+		shift
+		;;
+	"-log")
+	# keep rendering log file
+		KEEPLOG=yes
+		shift
+		;;
+	"-v"|"-view") 
+	# view rendering process (if enebled by povray)
+		VIEW="yes"
+		shift
+		;;
+	"-nov"|"-noview")
+	# dont display rendering output
+		VIEW="no"
+		shift
+		;;
+	"-a") 
+	# use antialiasing
+		ANTIALIAS=$2
+		shift 2
+		;;
+	"-bg"|-"background")
+	# set background color
+		BACKGROUND=$2
+		shift 2
+		;;
+	"-w"|"-width")
+	# set output image width
+		WIDTH=$2
+		shift 2
+		;;
+	"-h"|"-height")
+	# set output image height
+		HEIGHT=$2
+		shift 2
+		;;
+	"-o")
+	# define the name of output picture
+		OUTFILE=$2
+		shift 2
+		;;
+	"-keep")
+	# keep rendering source file
+		KEEPRENDERFILE=yes
+		shift
+		;;
+	"-scale")
+	# set the color scale range
+	#     requires 2 parameters: low scale and high scale
+		SCALERANGE[0]=$2
+		SCALERANGE[1]=$3
+		shift 3
+		;;
+	"-title")
+	# title
+		TITLE=$2
+		shift 2
+		;;
+	"-notitle")
+	# don't create title
+		SHOWTITLE="no"
+		shift
+		;;
+	"-keylabel")
+	# key label
+		KEYLABEL=$2
+		shift 2
+		;;
+	"-nokey")
+	# don't create key
+		SHOWKEY="no"
+		shift
+		;;
+	"-t")
+	# set time for this picture
+		TIME=$2
+		shift 2
+		;;
+	"-tu")
+	# set time unit
+		TIMEUNIT=$2
+		shift 2
+		;;
+	"-d")
+	# set the distance to the object
+		DISTANCE=$2
+		shift 2
+		;;
+	"-inc")
+	# include this file as povray commands
+		INCFILE=$2
+		shift 2
+		;;
+	"-incl")
+	# include rendering direct from command line
+	    INCLINE=$2
+	    shift 2
+	    ;;                        
+	"-rot")
+	# rotate the crystal, requires 3 parameters rx ry rz
+		ROTATION[0]=$2
+		ROTATION[1]=$3
+		ROTATION[2]=$4
+		shift 4
+		;;
+	"-tran")
+	# translate the crystal, requires 3 parameters tx ty tz
+		TRANSLATION[0]=$2
+		TRANSLATION[1]=$3
+		TRANSLATION[2]=$4
+		shift 4
+		;;
+	"-xtran")
+	# translation in x direction
+		TRANSLATION[0]=$2
+		shift 2
+		;;
+	"-ytran")
+	# translation in y direction
+		TRANSLATION[1]=$2
+		shift 2
+		;;
+	"-ztran")
+	# translation in y direction
+		TRANSLATION[2]=$2
+		shift 2
+		;;		
+	"-glas")
+	# tranparency for all atoms
+		GLAS=$2
+		shift 2
+		;;
+	"-ball")
+	# how to draw balls: sphere|disc
+		BALLMODE=$2
+		shift 2
+		;;
+	"-tag")
+	# tag one atom to use special color
+		TAG=$2
+		TAGCLR=$3
+		shift 3
+		;;
+	"-tagsize")
+	# tag one atom to be drawn in different size
+		TAGSIZE=$2
+		shift 2
+		;;
+	"-slx")
+	# slab x, obsolete use filtering instead!
+		SLABX[0]=$2
+		SLABX[1]=$3
+		shift 3
+		;;
+	"-sly")
+	# slab y, obsolete use filtering instead!
+		SLABY[0]=$2
+		SLABY[1]=$3
+		shift 3
+		;;
+	"-slz")
+	# slab z, obsolete use filtering instead!
+		SLABZ[0]=$2
+		SLABZ[1]=$3
+		shift 3
+		;;
+	"-gslab")
+	# set glass slab, obsolete use filtering instead!
+		GLASSLAB=yes
+		shift
+		;;
+	"-eye")
+	# set eye position
+    #      Care must be taken in using these following options
+    #      use povray vector format between quotes to give the value
+		EYE[0]=$2
+		EYE[1]=$3
+		EYE[2]=$4
+		shift 4
+		;;
+	"-lookat")
+	# set position where the eye points to
+		LOOKAT[0]=$2
+		LOOKAT[1]=$3
+		LOOKAT[2]=$4
+		shift 4
+		;;
+	"-V")
+	# be verbose
+		VERBOSE=yes
+		shift
+		;;
+		
+	"-ignore-inline")
+	# ignore inline commands
+		IGNOREINLINE=true
+		shift
+		;;
+	"-blob")
+	# use blob instead of union CSG
+		USEBLOB=yes
+		shift
+		;;
+	"-jpg")
+	# output file is in jpg format
+		IMAGETYPE=jpg
+		shift
+		;;		
+	"-png")
+	# output file is in png format (default)
+		IMAGETYPE=png
+		shift
+		;;
+		
+
+#HelpStop
+######################################################
+	# ofcourse, take a file name
+	*)
+		[ "-" = "`echo $1|cut -c1`" ] && die Unrecognized parameter: $1
+		DATAFILE=$1
+		shift
+		;;
+	esac
+done
+
+if [[ ! -z $USAGE ]]; then
+	
+	gawk '$'
+	
+	exit
+fi
+
+
+if [[ ! -z $OUTFILE ]]; then
+	OUTDIR=$(dirname $OUTFILE)
+else
+	OUTDIR="."
+fi
+
+########################no data file###########################
+
+if [[ -z $DATAFILE ]]; then
+	DATAFILE=$OUTDIR/render-data-tmp-$$
+	cat > $DATAFILE
+	TRASHCAN=$TRASHCAN" "$DATAFILE
+else
+	# if gzip format
+	if [[ ! -z $(echo $DATAFILE|gawk '/.gz$/{print}') ]]; then
+		zcat $DATAFILE > $OUTDIR/tmp.$$ || exit -1
+		OUTFILE=$OUTDIR/$(echo $DATAFILE|sed 's/.gz$//')
+		DATAFILE=$OUTDIR/tmp.$$
+		TRASHCAN=$TRASHCAN" "$DATAFILE
+	elif [[ -z $OUTFILE ]]; then
+		OUTFILE=$OUTDIR/$DATAFILE
+	fi
+fi
+
+# FIXME!
+OUTFILE=${OUTFILE}.${IMAGETYPE}
+
+###################Find rendering command in the data file####
+# RULE! Header must not have discontinued hash '#'
+
+# the #REN keyword may define any parameters
+if [[ -z $IGNOREINLINE ]]; then
+	gawk '/^#REN/{if($2=="STOP")exit;$1="";print;next}/^#/{next}{exit}' $DATAFILE > $OUTDIR/renderctr-$$
+	. $OUTDIR/renderctr-$$
+fi
+
+# if TIME is not defined... find it in file's header
+if [[ -z $TIME ]]; then
+	TIME=$(gawk '/^#\$/&&$2=="Time"{print $3;exit}' $DATAFILE)
+	[[ -z $TIME ]] && SHOWTIME=no
+fi
+
+###################Check/adjust parameters####################
+
+[[ "${SLABX[0]}" = "-inf" ]] && SLABX[0]=-$INF
+[[ "${SLABY[0]}" = "-inf" ]] && SLABY[0]=-$INF
+[[ "${SLABZ[0]}" = "-inf" ]] && SLABZ[0]=-$INF
+[[ "${SLABX[1]}" = "inf" ]]  && SLABX[1]=$INF
+[[ "${SLABY[1]}" = "inf" ]]  && SLABY[1]=$INF
+[[ "${SLABZ[1]}" = "inf" ]]  && SLABZ[1]=$INF
+[[ "$VIEW" = "yes" ]] && VIEW="+D"
+[[ "$VIEW" = "no" ]] && VIEW="-D"
+[[ "$ANTIALIAS" = "yes" ]] && ANTIALIAS="+A0.3"
+[[ "$ANTIALIAS" = "no" ]]  && ANTIALIAS=
+
+########### CREATE POSTPROCESSING COMMAND FILE ##########
+
+postcmd() {
+
+	echo "convert \\"
+
+	if [ "$SHOWKEY" = "yes" ]; then
+		echo -e "P3\n2\n3\n#color box\n256\n255 0 0\n255 0 0\n0 255 0\n0 255 0\n0 0 255\n0 0 255\n" > $OUTDIR/cb-$$.ppm
+		x0=$[ ${KEYPOS[0]} + $KEYSPACE ]
+		y0=$[ ${KEYPOS[1]} - $KEYLABELFONTSIZE ]
+		x1=$[ $x0 + ${KEYSIZE[0]} ]
+		y1=$[ $y0 + ${KEYSIZE[1]} ]
+
+cat << endt
+-draw "image Over $x0,$y0 ${KEYSIZE[0]},${KEYSIZE[1]} '$OUTDIR/cb-$$.ppm'" \\
+-fill none -stroke gray -strokewidth 2 -draw "rectangle $x0,$y0 $x1,$y1" \\
+-stroke none -fill $KEYLABELCOLOR -font $KEYLABELFONT -pointsize $KEYLABELFONTSIZE \\
+-draw "text ${KEYLABELPOS[0]},${KEYLABELPOS[1]} '$KEYLABEL'" \\
+-draw "text ${KEYPOS[0]},${KEYPOS[1]} '$SCALEHILABEL'" -draw "text ${KEYPOS[0]},$y1 '$SCALELOLABEL'" \\
+endt
+
+	fi
+
+	if [ "$SHOWTIME" = "yes" ]; then
+		TIME=$(echo $TIME|gawk '{printf("'$TIMEFORMAT'",$1)}')
+
+cat << endt
+-stroke none -fill $TIMECOLOR -font $TIMEFONT -pointsize $TIMEFONTSIZE \\
+-draw "text ${TIMEPOS[0]},${TIMEPOS[1]} '$TIME $TIMEUNIT'" \\
+endt
+
+	fi
+
+	if [ "$SHOWTITLE" = "yes" ]; then
+
+cat << endt
+-stroke none -fill $TITLECOLOR -font $TITLEFONT -pointsize $TITLEFONTSIZE \\
+-draw "text ${TITLEPOS[0]},${TITLEPOS[1]} '$TITLE'" \\
+endt
+
+	fi
+	echo $@
+}
+
+##############################################################
+
+if [ "$ONLYCREATEPOSTCMD" = "yes" ]; then
+	postcmd
+	exit 0
+fi
+
+###### Recheck #################
+
+[[ -f $DATAFILE ]] || die "cannot find file $DATAFILE..."
+
+
+SCL_0=${SCALERANGE[0]}
+SCL_1=$(echo ${SCALERANGE[*]} | gawk '{print ($1+  ($2-$1)/4)}')
+SCL_2=$(echo ${SCALERANGE[*]} | gawk '{print ($1+2*($2-$1)/4)}')
+SCL_3=$(echo ${SCALERANGE[*]} | gawk '{print ($1+3*($2-$1)/4)}')
+SCL_4=${SCALERANGE[1]}
+SCL_X="${SCALERANGE[1]} <"
+ASPECT=$(echo $WIDTH $HEIGHT | gawk '{print ($1/$2)}')
+
+[[ -z $SCALELOLABEL ]] && SCALELOLABEL=${SCALERANGE[0]}
+[[ -z $SCALEHILABEL ]] && SCALEHILABEL=${SCALERANGE[1]}
+
+if [ "$GLAS" = "0" ]; then 
+	TRACELVL=5
+else
+	TRACELVL=256
+fi
+
+
+# FIXME! NOT TESTED....
+if [[ $NLIGHT -eq 0 ]]; then
+	LIGHT[0]="2*$DISTANCE*<${EYE[0]}, ${EYE[1]}, ${EYE[2]}>"
+	NLIGHT=1
+else
+	typeset -i nlight=0
+	LG=LIGHT${nlight}_POSITION
+	while [[ ! -z ${!LG} ]]; do
+		LGX="LIGHT${nlight}_POSITION[0]"
+		LGY="LIGHT${nlight}_POSITION[1]"
+		LGZ="LIGHT${nlight}_POSITION[2]"
+		LIGHT[$nlight]="<${!LGX}, ${!LGY}, ${!LGZ}>"
+	done
+fi
+
+
+################# START CREATING POVRAY FILE ####################
+#
+# inline command: $(size:<number>;glas:<number>;color:<red>,<green>,<blue>)
+#
+
+translate_data() {
+
+cat << ENDTEXT
+#include "colors.inc"
+#include "textures.inc"
+#include "glass.inc"
+#include "metals.inc"
+#include "golds.inc"
+#include "stones.inc"
+#include "woods.inc"
+#include "shapes.inc"
+#include "shapes2.inc"
+#include "functions.inc"
+#include "math.inc"          
+#include "transforms.inc"
+
+global_settings
+{
+  max_trace_level $TRACELVL
+}
+camera {
+	location $DISTANCE*<${EYE[0]}, ${EYE[1]}, ${EYE[2]}>
+	angle $CAMANGLE
+	sky <${SKY[0]}, ${SKY[1]}, ${SKY[2]}>
+	up z
+	right $ASPECT*y
+	look_at <${LOOKAT[0]}, ${LOOKAT[1]}, ${LOOKAT[2]}>
+	#declare discnorm=<${EYE[0]}, ${EYE[1]}, ${EYE[2]}>-<${LOOKAT[0]}, ${LOOKAT[1]}, ${LOOKAT[2]}>;
+}
+background { color $BACKGROUND }
+ENDTEXT
+
+	I=0
+	while [ $I -lt $NLIGHT ]; do
+	if [[ -z ${LIGHTCOLOR[$I]} ]]; then
+		MLC=$DEFAULTLIGHTCOLOR
+	else
+		MLC=${LIGHTCOLOR[$I]}
+	fi
+
+cat << ENDTEXT
+light_source { 
+	${LIGHT[$I]}, $MLC
+	shadowless
+	parallel
+	point_at <${LOOKAT[0]}, ${LOOKAT[1]}, ${LOOKAT[2]}>
+}
+ENDTEXT
+
+		I=$[ $I + 1 ]
+	done
+
+	if [[ -z $USEBLOB ]]; then echo "union {"
+	else 
+		echo "blob {"
+		echo "threshold 0.65"
+		[[ -z $BLOBSTRENGTH ]]&&BLOBSTRENGTH=1
+	fi
+
+gawk	'
+BEGIN{
+	print "// Balls..."
+	TMIN='${SCALERANGE[0]}'
+	TMAX='${SCALERANGE[1]}'
+	RNG=(TMAX-TMIN)/4
+	GLAS='$GLAS'
+	TAG='$TAG'
+	TAGCLR="'"$TAGCLR"'"
+	TAGSIZE='$TAGSIZE'
+	SLX1='${SLABX[0]}'
+	SLX2='${SLABX[1]}'
+	SLY1='${SLABY[0]}'
+	SLY2='${SLABY[1]}'
+	SLZ1='${SLABZ[0]}'
+	SLZ2='${SLABZ[1]}'
+#   Slab is depricated... use filtering instead!
+#	GLASSLAB="'$GLASSLAB'"
+	BLOBSTRENGTH="'$BLOBSTRENGTH'"
+	BALLMODE="'$BALLMODE'"
+}
+
+/^#/{next}
+
+######### PARTICLE SETTINGS ########
+# request from MAC user!!!!
+
+/\$\([[:print:]]*\)/{
+	match($0,/\$\([[:print:]]*\)/,a)
+	clr=a[0]
+	if(match(clr,/glas:([[:digit:][:punct:]]*)[;\)]/,a))vglas=a[1];
+	if(match(clr,/color:([[:digit:][:punct:]]*),([[:digit:][:punct:]]*),([[:digit:][:punct:]]*)[;\)]/,a))
+		vcolor=" "a[1]","a[2]","a[3]
+	if(match(clr,/size:([[:digit:][:punct:]]*)[;\)]/,a))vsize=a[1]
+}
+               
+{
+	ISTAG=0
+
+	BSIZ='$BALLSIZE'
+	ACOL=GLAS
+	CLR=""
+
+	if(vglas) ACOL=vglas
+	if(vcolor) CLR=vcolor
+	if(vsize) BSIZ=vsize
+
+    if (NR==TAG) {
+    	#FIXME! maybe this part is not usefull
+		CLR="pigment { color "TAGCLR"}"
+		BSIZ=TAGSIZE
+		ISTAG=1
+	} else {
+		# take the parsed parameters if exist
+		
+		if(!CLR){
+			VCLR=$4-TMIN
+			if (VCLR<RNG) {WR=VCLR/RNG; CLR="0,"WR",1"}
+			else if (VCLR<2*RNG) {WR=1-(VCLR-RNG)/RNG; CLR="0,1,"WR}
+			else if (VCLR<3*RNG) {WR=(VCLR-2*RNG)/RNG; CLR=WR",1,0"}
+			else if (VCLR<4*RNG) {WR=1-(VCLR-3*RNG)/RNG; CLR="1,"WR",0"}
+			else CLR="1,0,0" 
+		}
+	}
+#	print "Alpha",ACOL>"/dev/stderr"
+	
+	if(!ISTAG) CLR="texture { pigment { color rgbt <"CLR","ACOL"> } \
+	                finish { \
+	                phong 1.0 \
+	                phong_size 40 \
+	                metallic \
+	                ambient 0.1 diffuse 0.9 \
+	                } }"
+	              
+	if(BALLMODE=="sphere") {                
+		sphereline="sphere { <"$1", "$2", "$3">, "BSIZ" "BLOBSTRENGTH" "CLR
+	} else {
+		sphereline="disc { <"$1", "$2", "$3">, discnorm, "BSIZ" "CLR
+	}
+
+	if(!BLOBSTRENGTH) sphereline=sphereline"interior {I_Glass}"	
+	print sphereline"}"
+	
+	#clear parameters
+	vglas=0;vcolor="";vsize=0
+	
+}' $DATAFILE
+
+[[ ! -z "$INCLINE" ]] && echo $INCLINE
+[[ ! -z $INCFILE ]] && cat $INCFILE
+
+cat << ENDTEXT
+translate ${TRANSLATION[0]}*x
+translate ${TRANSLATION[1]}*y
+translate ${TRANSLATION[2]}*z
+rotate    ${ROTATION[0]}*x
+rotate    ${ROTATION[1]}*y
+rotate    ${ROTATION[2]}*z
+}
+ENDTEXT
+
+if [[ ! -z $FINISHING ]]; then
+	FINCFILE=$(echo $FINISHING|gawk '/^file:/{match($0,/file:([[:alnum:].-~]+)/,a);print a[1]}')
+	if [[ -z $FINCFILE ]]; then
+		echo $FINISHING
+	else
+		cat $FINCFILE
+	fi
+fi
+
+}
+
+render() {
+	if [[ "$VERBOSE" = "yes" ]]; then
+		povray $VIEW $ANTIALIAS +O$2 +W$WIDTH +H$HEIGHT $1
+	else
+		povray $VIEW $ANTIALIAS +O$2 +W$WIDTH +H$HEIGHT $1 > render.log 2>&1
+	fi
+}
+
+
+#---------MAIN-PROGRAM----------#
+
+# use same directory with the data file
+tmpov=$OUTDIR/c-$$.pov
+tmpng=$OUTDIR/c-$$.png
+postcmd=$OUTDIR/postcmd-$$
+
+translate_data > $tmpov
+
+render $tmpov $tmpng
+
+if [[ -z $(echo $SHOWTITLE$SHOWTIME$SHOWKEY|grep yes) ]];then
+	convert $tmpng $OUTFILE
+else
+	postcmd "$tmpng $OUTFILE" >> $postcmd
+	sh $postcmd
+fi
+
+rm -f $postcmd $OUTDIR/cb-$$.ppm $tmpng $TRASHCAN
+
+[[ "$KEEPRENDERFILE" = "yes" ]] || rm -f $tmpov $OUTDIR/renderctr-$$
+[[ "$KEEPLOG" = "yes" ]] || rm -f render.log

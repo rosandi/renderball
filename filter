@@ -1,0 +1,1 @@
+awk '/^#/{next}{print}'|awk 'NR<=24000{print $0,"$(glas:0.5)";next}{print}'

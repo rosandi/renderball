@@ -1,0 +1,275 @@
+#!/bin/bash
+
+# movie maker using RenderBall
+
+cat << endinfo
+
+##################################################
+MovieMaker ver 0.0
+(c) Yudi Rosandi, 2004-2006
+Renderer tool  : povray
+         script: renderball (c) Rosandi, 2004
+
+##################################################
+
+endinfo
+
+
+RENDERER=$(which renderball)
+CONFIGFILE=$HOME/ctrl/render.cfg
+INPUTDIR=$PWD
+MOVNAME=movie.mpg
+BASEDIR=$PWD
+LOG=/dev/null
+DATA=Data
+TMPDIR=RENDER-$$
+MOVIECREATOR=$(which ffmpeg)
+MOVIEPARAM="-y -qscale 1 -i"
+
+#ffmpeg -y -qscale 1 -i pic-%d.jpg $BASEDIR/$MOVNAME
+
+# time difference between successive data file in ps
+# empty means, find information in the data file
+
+TUNIT=ps
+NLIGHT=0
+
+DFMT="%03d"
+LMIN=0
+LMAX=
+LSTEP=1
+KEEP=no
+FILTER=
+NICEPROGRESS=
+MACHFILE=
+NPROC=1
+
+# parse parameter
+while [ ! -z "$1" ]; do
+	case "$1" in
+		"-filter")
+			FILTER=$2;
+			shift 2
+			;;
+		"-c"|"-config")
+			CONFIGFILE=$2
+			shift 2
+			;;
+		"-o"|"-output")
+			MOVNAME=$2
+			shift 2
+			;;
+		"-i"|"-filename")
+			DATA=$2
+			shift 2
+			;;
+		"-log")
+			LOG=$2
+			shift 2
+			;;
+		"-format") # Data format
+			DFMT=$2
+			shift 2
+			;;
+		"-keep")
+			KEEP=yes
+			shift
+			;;
+		"-progress")
+			NICEPROGRESS=true;
+			shift
+			;;
+		"-np")
+			NPROC=$2
+			shift 2
+			;;
+		"-machinefile")
+			MACHFILE=$2
+			shift 2
+			;;
+		*)
+			INPUTDIR=$1
+			shift
+ 		;;
+	esac
+done  
+
+[[ -z $RENDERER ]]&&exit 1
+
+#-------------------------Functions---------------------------#
+# This progress bar is not very accurate. 
+# The main idea is to show that the program is working
+
+myprogress() {
+	while [ -f $TMPDIR/FILENAME ] ; do
+		TM=$(date +"%H:%M:%S")
+		echo -n -e "\rProcessing `cat $TMPDIR/FILENAME` -> $TM       "
+		sleep 1
+	done
+}
+
+oninterrupt() {
+	echo -e "\n\nAbnormal termination\nAborting..." >& 2
+	cd $BASEDIR
+	rm -rf $TMPDIR
+	exit -1
+}
+
+die() {
+	echo $@ >& 2
+	exit
+}
+
+silent_ls() {
+	ls -1 $@ 2>/dev/null
+	return $!
+}
+
+# parameters: command-file status-file
+exec_render() {
+	HOST=$(echo $2|cut -d- -f1)
+
+	if [[ $HOST == $(hostname) ]]; then
+		[[ -z $NICEPROGRESS ]]&&echo "processing.. $(cat $2) $HOST "
+		sh $1
+	else
+		[[ -z $NICEPROGRESS ]]&&echo "processing.. $(cat $2) $HOST (remote)"
+		ssh $HOST sh $(pwd)/$1 || die Connection failed $HOST... aborting
+	fi
+	rm -f $2
+}
+
+absolute_path() {
+	echo $(echo $1|awk '/^\//{print $1;exit}{print "'$PWD'/"$1}')
+}
+
+##---------PREPARE----------##
+
+# make template directory
+mkdir -p $TMPDIR
+
+# FIXME! no config file???
+[[ ! -f "$CONFIGFILE" ]] && die "Cannot find configuration file: $CONFIGFILE"
+
+# filter file...
+if [[ ! -z $FILTER ]]; then
+	[[ -f $FILTER ]] || die "cannot find filter file"
+	FILTER=$(absolute_path $FILTER)
+fi
+
+# machine file
+if [[ -z $MACHFILE ]]; then
+	for ((m=1;m<=$NPROC;m++));do
+		hostname >> mach-$$
+	done
+	MACHFILE=mach-$$
+fi
+
+# use absolute filenames
+CONFIGFILE=$(absolute_path $CONFIGFILE)
+MACHFILE=$(absolute_path $MACHFILE)
+INPUTDIR=$(absolute_path $INPUTDIR)
+
+# find number of file,file type, and define CATER
+CATER=cat
+EXT=$(echo $DFMT|awk '{gsub(/[\%d]/, ""); a=$0*1;if ($0=="") print "*"; else for (i=1;i<=a;i++) printf("?")}')
+LMAX=$(silent_ls $INPUTDIR/$DATA.$EXT|wc -l)
+if [[ $LMAX -eq 0 ]]; then
+	LMAX=$(silent_ls $INPUTDIR/$DATA.$EXT.gz|wc -l)
+	[[ $LMAX -gt 0 ]]&&CATER=zcat
+fi
+[[ $LMAX -le 1 ]] && die "Not enough data to create movie $DATA.$EXT"
+
+cd $TMPDIR
+
+##----------START-----------##
+
+echo "initiated" > FILENAME
+
+if [[ $NICEPROGRESS == yes ]];then
+	 myprogress &
+	echo $! > CHID
+fi
+
+trap oninterrupt EXIT
+echo "Start rendering `date`" >> $LOG
+
+## this function does not run renderer directly
+
+createrendercommand() { 
+	F=$INPUTDIR/$DATA.$(awk 'BEGIN{printf("'$DFMT'",'$1')}')
+	[[ $CATER = zcat ]] && F=$F.gz
+
+	[[ ! -f $F ]]&&return
+	[[ $1 -gt $LMAX ]]&&return
+
+	O=$(pwd)/pic-$(awk 'BEGIN{print '$1'-'$LMIN'}')
+	echo $F > FILENAME
+	
+	if [[ -z $FILTER ]]; then
+		echo "$CATER $F|$RENDERER -c $CONFIGFILE -nov -tu $TUNIT -o $O -jpg" > rendercmd-$FNUM
+	else
+		# if the filter is executable run it, else assume as awk script
+		if [ -x $FILTER ]; then
+			echo "$CATER $F|$FILTER $F|$RENDERER -c $CONFIGFILE -nov -tu $TUNIT -o $O -jpg" > rendercmd-$FNUM
+		else
+			echo "$CATER $F|awk -f $FILTER|$RENDERER -c $CONFIGFILE -nov -tu $TUNIT -o $O -jpg" > rendercmd-$FNUM
+		fi
+	fi	
+}
+
+
+FNUM=$LMIN
+
+# create render commands
+while [[ $FNUM -le $LMAX ]]; do
+	createrendercommand $FNUM $np
+	FNUM=$[ $FNUM + $LSTEP ]
+done
+
+nfile=$(silent_ls rendercmd-*|wc -l)
+
+[[ -z $MACHFILE ]] && die Can not find machine file $MACHFILE
+
+typeset -i mcnt=0
+for m in $(cat $MACHFILE); do
+	mcnt=mcnt+1
+	MACH[$mcnt]=$m
+done
+
+typeset -i pct=0
+
+for cmd in rendercmd-*; do
+
+	STATFILE=
+	while [[ -z $STATFILE ]]; do
+		for ((m=1;m<=$mcnt;m++)); do
+			[[ -f ${MACH[$m]}-$m-status ]]&&continue
+			STATFILE=${MACH[$m]}-$m-status
+		done
+		[[ -z $STATFILE ]]&&sleep 1
+	done
+	
+	echo "$pct/$nfile" > $STATFILE
+	exec_render $cmd $STATFILE &
+	pct=pct+1
+done
+
+echo "all render commands are sent... waiting to finish..."
+while (($(silent_ls *-*-status|wc -l)>0)); do sleep 1; done
+echo "rendering finished $(date)" >> $LOG
+echo "now creating movie.."
+
+echo "$MOVIECREATOR $MOVIEPARAM pic-%d.jpg $BASEDIR/$MOVNAME"
+$MOVIECREATOR $MOVIEPARAM pic-%d.jpg $BASEDIR/$MOVNAME
+
+echo -e "\n******movie $BASEDIR/$MOVENAME is ready******\n"
+sleep 2
+
+trap "" EXIT
+
+cd $BASEDIR
+[[ "$KEEP" = "no" ]]&& rm -r $TMPDIR
+
+# cleaning....
+rm -rf mach-$$

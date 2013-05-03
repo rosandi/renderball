@@ -1,0 +1,6 @@
+#!/bin/bash
+
+INSTALLDIR=$HOME/bin/
+
+cp renderball $INSTALLDIR
+cp makemovie $INSTALLDIR

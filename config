@@ -1,0 +1,41 @@
+#
+# RenderBall
+# (c) Rosandi, 2006
+#
+# This script is executed as shell script
+# so beware to put the variable values exactly after equal sign
+# no trailing spaces please!
+#
+
+SHOWTITLE=no
+SHOWKEY=no
+SHOWTIME=no
+
+TITLEPOS=(-150 0 40)
+TITLE="Argon to Pt(111) Bombardment"
+TIMEPOS=(-150 0 33)
+TIME="0.00 ps"
+KEYPOS=(130 0 5)
+KEYLABEL="Temperature (K)"
+
+SCALERANGE=(0 2000)  # color range
+BALLSIZE=1.5
+GLAS=0.9
+GLASSLAB=yes
+SLABX=(90 inf)
+SLABY=(-inf 10)
+SLABZ=(-2 inf)
+
+TAG=0
+TAGCLR=Red
+
+DISTANCE=350
+ROTATION=(0 30 -90)
+TRANSLATION=(-83 0 30)
+BACKGROUND=Black
+
+WIDTH=800
+HEIGHT=400
+ANTIALIAS="+A0.3"
+INCFILE=
+VIEW=no

@@ -1,0 +1,18 @@
+# controlling renderball:
+#
+#REN VIEW=(0 0 0)
+#REN EYE=(0 100 0)
+# and stops immediately searching of render control commands
+# this is to avoid searching until end of file
+#REN STOP
+#
+# x y z value .... $(glas:1;color:r,g,b;size:2)
+# glas:number => number is a real value in range 0..1
+# color:r,g,b => r,g,b = red, green and blue in range 0..1
+# size:number => number is an arbitrary real value
+#
+# example:
+#
+0.0 0.0 0.0 400 
+5.0 0.0 0.0 400 $(glas:0.5;color:1,0,0;size:3)
+0.0 5.0 0.0 1500 1e-5 1e-5 -1e-3 $(color:0,0,1;size:2)

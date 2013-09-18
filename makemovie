@@ -37,17 +37,21 @@ NLIGHT=0
 DFMT="%03d"
 LMIN=0
 LMAX=
+FDELTA=1
+RNDCNT=0
 LSTEP=1
 KEEP=no
 FILTER=
 NICEPROGRESS=
 MACHFILE=
 NPROC=1
+DELTAT=
+TMARK=
 
 # parse parameter
 while [ ! -z "$1" ]; do
 	case "$1" in
-		"-filter")
+		"-fi"|"-filter")
 			FILTER=$2;
 			shift 2
 			;;
@@ -67,7 +71,7 @@ while [ ! -z "$1" ]; do
 			LOG=$2
 			shift 2
 			;;
-		"-format") # Data format
+		"-f"|"-format") # Data format
 			DFMT=$2
 			shift 2
 			;;
@@ -83,18 +87,28 @@ while [ ! -z "$1" ]; do
 			NPROC=$2
 			shift 2
 			;;
-		"-machinefile")
+		"-mach"|"-machinefile")
 			MACHFILE=$2
 			shift 2
 			;;
+		"-dt") # use time instead of file sequence
+		    DELTAT=$2
+		    shift 2
+		    ;;
+		"-df") # file numbering step
+		   FDELTA=$2
+		   shift 2
+		   ;;
+		"-tmark") # the mark of time in data file
+		   TMARK=$2
+		   shift 2
+		   ;;
 		*)
 			INPUTDIR=$1
 			shift
  		;;
 	esac
 done  
-
-[[ -z $RENDERER ]]&&exit 1
 
 #-------------------------Functions---------------------------#
 # This progress bar is not very accurate. 
@@ -178,6 +192,9 @@ if [[ $LMAX -eq 0 ]]; then
 	LMAX=$(silent_ls $INPUTDIR/$DATA.$EXT.gz|wc -l)
 	[[ $LMAX -gt 0 ]]&&CATER=zcat
 fi
+
+echo processing $LMAX files
+
 [[ $LMAX -le 1 ]] && die "Not enough data to create movie $DATA.$EXT"
 
 cd $TMPDIR
@@ -201,9 +218,22 @@ createrendercommand() {
 	[[ $CATER = zcat ]] && F=$F.gz
 
 	[[ ! -f $F ]]&&return
-	[[ $1 -gt $LMAX ]]&&return
+	
+	# check time in file
+	if [[ ! -z $DELTAT ]]; then
+	  
+	  TAKETIME=$(echo $RNDCNT $DELTAT|awk '{print $1*$2}')
+	  
+	  [[ -z $TMARK ]] && die "time mark required! use -tmark"
+	  # time data is the last field!!
+	  TTT=$( awk '/'$TMARK'/{if(match($NF,/[[:alpha:]]/)){take=1;next}else {print $NF;exit}}
+	  take{print $NF;exit}' $F )
+	  
+	  (echo $TTT|awk '$1<'$TAKETIME'{exit 0}{exit 1}')&&return
+	  
+	fi
 
-	O=$(pwd)/pic-$(awk 'BEGIN{print '$1'-'$LMIN'}')
+	O=$(pwd)/pic-$RNDCNT
 	echo $F > FILENAME
 	
 	if [[ -z $FILTER ]]; then
@@ -216,16 +246,22 @@ createrendercommand() {
 			echo "$CATER $F|awk -f $FILTER|$RENDERER -c $CONFIGFILE -nov -tu $TUNIT -o $O -jpg" > rendercmd-$FNUM
 		fi
 	fi	
+	RNDCNT=$(( $RNDCNT + 1 ))
 }
 
 
-FNUM=$LMIN
+#FNUM=$LMIN
+FLIM=$(( $LMAX * $FDELTA ))
 
 # create render commands
-while [[ $FNUM -le $LMAX ]]; do
-	createrendercommand $FNUM $np
-	FNUM=$[ $FNUM + $LSTEP ]
+for (( FNUM=$LMIN; FNUM<=$FLIM; FNUM+=$FDELTA )); do
+    createrendercommand $FNUM $np
 done
+
+#while [[ $FNUM -le $LMAX ]]; do
+#	createrendercommand $FNUM $np
+#	FNUM=$[ $FNUM + $LSTEP ]
+#done
 
 nfile=$(silent_ls rendercmd-*|wc -l)
 

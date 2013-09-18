@@ -141,7 +141,7 @@ silent_ls() {
 
 # parameters: command-file status-file
 exec_render() {
-	HOST=$(echo $2|cut -d- -f1)
+	HOST=$(echo $2|sed 's/-[[:alnum:]]*-[[:alnum:]]*$//')
 
 	if [[ $HOST == $(hostname) ]]; then
 		[[ -z $NICEPROGRESS ]]&&echo "processing.. $(cat $2) $HOST "

@@ -71,6 +71,7 @@ ANTIALIAS=yes
 INCFILE=
 INCLINE=
 VIEW=no
+PROJECTION=perspective
 DISTANCE=1
 CAMANGLE=35
 VERBOSE=no
@@ -561,6 +562,7 @@ global_settings
   max_trace_level $TRACELVL
 }
 camera {
+    $PROJECTION
 	location $DISTANCE*<${EYE[0]}, ${EYE[1]}, ${EYE[2]}>
 	angle $CAMANGLE
 	sky <${SKY[0]}, ${SKY[1]}, ${SKY[2]}>

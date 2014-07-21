@@ -18,7 +18,7 @@ endinfo
 RENDERER=$(which renderball)
 CONFIGFILE=$HOME/ctrl/render.cfg
 INPUTDIR=$PWD
-MOVNAME=movie.mpg
+MOVNAME=movie.mp4
 BASEDIR=$PWD
 LOG=/dev/null
 DATA=Data
@@ -299,7 +299,7 @@ echo "now creating movie.."
 echo "$MOVIECREATOR $MOVIEPARAM pic-%d.jpg $BASEDIR/$MOVNAME"
 $MOVIECREATOR $MOVIEPARAM pic-%d.jpg $BASEDIR/$MOVNAME
 
-echo -e "\n******movie $BASEDIR/$MOVENAME is ready******\n"
+echo -e "\n******movie $BASEDIR/$MOVNAME is ready******\n"
 sleep 2
 
 trap "" EXIT
